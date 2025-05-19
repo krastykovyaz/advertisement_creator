@@ -7,11 +7,8 @@ from telegram.ext import (
     Updater, CommandHandler, MessageHandler, Filters, 
     CallbackContext, ConversationHandler, CallbackQueryHandler
 )
-import torch
-from lavis.models import load_model_and_preprocess
 import google.generativeai as genai
 from google.generativeai.types import GenerationConfig
-from torchvision import transforms
 
 # Enable logging
 logging.basicConfig(
@@ -23,21 +20,13 @@ logger = logging.getLogger(__name__)
 GEMINI_API_KEY = 'AIzaSyACHH5mPmNSqyYasIsRnI7QPx-roM_Tk0Q'
 # TELEGRAM_TOKEN = '1640633632:AAF5JR4iBRkn4lVw--cI6-ZIxRxCI87IMx8'
 TELEGRAM_TOKEN = '7624621135:AAEyU65amsdMtNCYFlD0C-BXt_hGpbW_KbE'
-MODEL_NAME = "gemini-1.5-pro"
+MODEL_NAME = "gemini-2.0-flash"
 
 # Define conversation states
 PHOTO, DESCRIPTION, SUGGESTION, CONFIRMATION = range(4)
 
 class PostGeneratorBot:
     def __init__(self):
-        # Initialize LAVIS for image understanding
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.lavis_model, self.vis_processors, _ = load_model_and_preprocess(
-            name="blip_caption",
-            model_type="base_coco",
-            is_eval=True,
-            device=self.device
-        )
         
         # Initialize Gemini
         genai.configure(api_key=GEMINI_API_KEY)
@@ -127,15 +116,25 @@ class PostGeneratorBot:
             photo_path = f"temp/{update.effective_user.id}_{update.message.message_id}.jpg"
             photo_file.download(photo_path)
             
-            # Process image
-            raw_image = Image.open(photo_path).convert("RGB")
-            image = self.vis_processors["eval"](raw_image).unsqueeze(0).to(self.device)
-            caption = self.lavis_model.generate({"image": image})
+            # Новый способ: отправить изображение в Gemini для генерации подписи
+            with open(photo_path, "rb") as img_file:
+                image_bytes = img_file.read()
+            # Используем Gemini для генерации подписи к изображению
+            response = self.gemini.generate_content(
+                contents=[{"mime_type": "image/jpeg", "data": image_bytes}],
+                generation_config=GenerationConfig(
+                    temperature=0.7,
+                    top_p=0.9,
+                    max_output_tokens=100
+                )
+            )
+            logger.info(f"Gemini response: {response}")
+            gemini_caption = response.text if hasattr(response, "text") else ""
             
             # Store results
             context.user_data['photos'].append({
                 'path': photo_path,
-                'caption': caption[0]
+                'caption': gemini_caption
             })
             
             # Update status
