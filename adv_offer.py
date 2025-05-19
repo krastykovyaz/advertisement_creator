@@ -7,9 +7,8 @@ from telegram.ext import (
     Updater, CommandHandler, MessageHandler, Filters, 
     CallbackContext, ConversationHandler, CallbackQueryHandler
 )
-import google.generativeai as genai
-from google.generativeai.types import GenerationConfig
-
+from google import genai
+from google.genai.types import GenerateContentConfig, Part
 # Enable logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
@@ -29,8 +28,7 @@ class PostGeneratorBot:
     def __init__(self):
         
         # Initialize Gemini
-        genai.configure(api_key=GEMINI_API_KEY)
-        self.gemini = genai.GenerativeModel(MODEL_NAME)
+        self.gemini = genai.Client(api_key=GEMINI_API_KEY)
         
         # Create temp directory if it doesn't exist
         if not os.path.exists('temp'):
@@ -119,16 +117,21 @@ class PostGeneratorBot:
             # Новый способ: отправить изображение в Gemini для генерации подписи
             with open(photo_path, "rb") as img_file:
                 image_bytes = img_file.read()
+            image = Part.from_bytes(
+                data=image_bytes, mime_type="image/jpeg"
+            )
+
             # Используем Gemini для генерации подписи к изображению
-            response = self.gemini.generate_content(
-                contents=[{"mime_type": "image/jpeg", "data": image_bytes}],
-                generation_config=GenerationConfig(
+            prompt = f"Проанализируй изображение и напиши ясное и краткое описание (одно предложение), так что бы в дальнейшем его можно было использовать для генерации текста рекламы"
+            response = self.gemini.models.generate_content(
+                model=MODEL_NAME,
+                contents=[image, prompt],
+                config=GenerateContentConfig(
                     temperature=0.7,
                     top_p=0.9,
                     max_output_tokens=100
                 )
             )
-            logger.info(f"Gemini response: {response}")
             gemini_caption = response.text if hasattr(response, "text") else ""
             
             # Store results
@@ -158,15 +161,13 @@ class PostGeneratorBot:
             return PHOTO
 
     def process_all_photos(self, context: CallbackContext) -> str:
-        """Final processing after all photos are received."""
+        """Final processing after all photos are received. Эта функция не вызывается вообще, не знаю почему"""
         try:
-            if not context.user_data.get('photos'):
+            photos = context.user_data.get('photos', [])
+            if not photos:
                 return "no photos"
                 
             # Send final processing notification
-            last_msg = context.user_data['processing_msgs'][-1] if context.user_data.get('processing_msgs') else None
-            if last_msg:
-                final_msg = last_msg.reply_text("🔍 Combining all photos...")
             
             # Generate combined description
             captions = [photo['caption'] for photo in context.user_data['photos']]
@@ -221,8 +222,15 @@ class PostGeneratorBot:
     def generate_suggestion(self, user_data: Dict) -> str:
         """Generate post content using Gemini including the user's description."""
         try:
+            image_caption = user_data.get('image_caption', '')
+            logger.info(f"Image caption: {image_caption}")
+            if not image_caption:
+                captions = [photo['caption'] for photo in user_data['photos']]
+                logger.info(f"Captions: {captions}")
+                combined_description = " ".join(captions)
+                image_caption = combined_description
             prompt = f"""
-            *   **Визуальный контент:** {user_data.get('image_caption', 'the attached photos')}
+            *   **Визуальный контент:** {image_caption}
             *   **Описание от пользователя:** {user_data.get('description', '')}
 
             **Требования:**
@@ -236,9 +244,10 @@ class PostGeneratorBot:
             Пост должен быть как удар молнии – от изображений к описанию, не оставляя шанса пройти мимо!
             """
             
-            response = self.gemini.generate_content(
-                prompt,
-                generation_config=GenerationConfig(
+            response = self.gemini.models.generate_content(
+                model=MODEL_NAME,
+                contents=prompt,
+                config=GenerateContentConfig(
                     temperature=0.7,
                     top_p=0.9,
                     max_output_tokens=500
@@ -258,7 +267,7 @@ class PostGeneratorBot:
         
         # Create inline keyboard with options
         keyboard = [
-            [InlineKeyboardButton("🚀 Continue without description", callback_data="no_description")],
+            # [InlineKeyboardButton("🚀 Continue without description", callback_data="no_description")],
             [InlineKeyboardButton("✏️ Add description", callback_data="add_description")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -289,7 +298,7 @@ class PostGeneratorBot:
             )
             return DESCRIPTION
             
-        elif query.data == "accept":
+        elif query.data == "end":
             query.edit_message_text(
                 f"✅ Post approved!\n\n{context.user_data['suggestion']}\n\n"
                 "Use /start to create another post."
@@ -330,7 +339,6 @@ class PostGeneratorBot:
         user_text = update.message.text.strip()
         context.user_data['description'] = user_text
         logger.info(f"User description received: {user_text}")
-
         try:
             if 'image_caption' not in context.user_data:
                 logger.info("Generating image caption")
@@ -412,7 +420,8 @@ class PostGeneratorBot:
             [
                 InlineKeyboardButton("✅ Publish", callback_data="accept"),
                 InlineKeyboardButton("✏️ Edit", callback_data="edit"),
-                InlineKeyboardButton("🔄 Regenerate", callback_data="regenerate")
+                InlineKeyboardButton("🔄 Regenerate", callback_data="regenerate"),
+                InlineKeyboardButton("End", callback_data="end")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
