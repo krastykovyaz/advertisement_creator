@@ -2,7 +2,7 @@ import os
 import logging
 from typing import Dict, List
 from PIL import Image
-from telegram import Update, ForceReply, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InputMediaPhoto, Update, ForceReply, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Updater, CommandHandler, MessageHandler, Filters, 
     CallbackContext, ConversationHandler, CallbackQueryHandler
@@ -61,17 +61,29 @@ class PostGeneratorBot:
             },
             fallbacks=[CommandHandler('cancel', self.cancel)],
         )
-        
+        # TODO: не работает, нужный метод вызывается, но фотки потом не обрабатываются
+        # self.dp.add_handler(CallbackQueryHandler(
+        #     lambda update, context: self.start(update, context),
+        #     pattern="^/start$"
+        # ))
         self.dp.add_handler(conv_handler)
         self.dp.add_error_handler(self.error_handler)
     
     def start(self, update: Update, context: CallbackContext) -> int:
         """Start the conversation and ask for photos."""
         user = update.effective_user
-        update.message.reply_markdown_v2(
-            fr'Hi {user.mention_markdown_v2()}\! Send me one or more photos for your post\.',
-            reply_markup=ForceReply(selective=True),
-        )
+        if update.message:
+            update.message.reply_markdown_v2(
+                fr'Hi {user.mention_markdown_v2()}\! Send me one or more photos for your post\.',
+                reply_markup=ForceReply(selective=True),
+            )
+        # else:
+        #     query = update.callback_query
+        #     query.message.reply_markdown_v2(
+        #         fr'Hi {user.mention_markdown_v2()}\! Send me one or more photos for your post\.',
+        #         reply_markup=ForceReply(selective=True),
+        #     )
+        #     query.answer()
         # Initialize photo list
         context.user_data['photos'] = []
         return PHOTO
@@ -298,10 +310,14 @@ class PostGeneratorBot:
             )
             return DESCRIPTION
             
-        elif query.data == "end":
+        elif query.data == "accept":
+            # keyboard = [
+            #     InlineKeyboardButton("START AGAIN", callback_data="/start")],
+            # logger.info("________________Post accepted")
             query.edit_message_text(
                 f"✅ Post approved!\n\n{context.user_data['suggestion']}\n\n"
                 "Use /start to create another post."
+                # reply_markup=InlineKeyboardMarkup(keyboard)
             )
             return ConversationHandler.END
             
@@ -421,7 +437,6 @@ class PostGeneratorBot:
                 InlineKeyboardButton("✅ Publish", callback_data="accept"),
                 InlineKeyboardButton("✏️ Edit", callback_data="edit"),
                 InlineKeyboardButton("🔄 Regenerate", callback_data="regenerate"),
-                InlineKeyboardButton("End", callback_data="end")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -434,12 +449,27 @@ class PostGeneratorBot:
                 parse_mode='Markdown'
             )
         else:
-            update.message.reply_text(
-                f"📝 *Generated Post:*\n\n{suggestion}\n\n"
-                "What would you like to do?",
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode='Markdown'
-            )
+            # update.message.reply_text(
+            #     f"📝 *Generated Post:*\n\n{suggestion}\n\n"
+            #     "What would you like to do?",
+            #     reply_markup=InlineKeyboardMarkup(keyboard),
+            #     parse_mode='Markdown'
+            # )
+            text = f"""📝 *Generated Post:*\n\n{suggestion}\n\nWhat would you like to do?"""
+            # TODO: несколько фоток отправить можно, добавить клавиатуру нельзя
+            # messages = update.message.reply_media_group(
+            #     media=[
+            #         InputMediaPhoto(media=open(photo['path'], 'rb'), caption=text if i == 0 else None)
+            #         for i, photo in enumerate(context.user_data['photos'])
+            #     ],
+            # )
+            # TODO: изменение клавиатуры не работает не работает, вот ошибка ERROR - Update {'update_id': 570079899, 'message': {'chat': {'first_name': 'Iaroslav', 'last_name': 'Neverov', 'id': 200692606, 'username': 'beeguy', 'type': 'private'}, 'message_id': 472, 'caption_entities': [], 'new_chat_photo': [], 'forward_date': 1747737583, 'new_chat_members': [], 'channel_chat_created': False, 'text': 'хорошо сидели на пляже, продам за 100', 'supergroup_chat_created': False, 'group_chat_created': False, 'date': 1747738000, 'forward_from': {'is_bot': False, 'id': 200692606, 'language_code': 'ru', 'first_name': 'Iaroslav', 'username': 'beeguy', 'last_name': 'Neverov'}, 'delete_chat_photo': False, 'photo': [], 'entities': [], 'from': {'is_bot': False, 'id': 200692606, 'language_code': 'ru', 'first_name': 'Iaroslav', 'username': 'beeguy', 'last_name': 'Neverov'}}} caused error Message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message
+            # for message in messages:
+            #     if message.caption:
+            #         message.edit_reply_markup(
+            #             reply_markup=reply_markup,
+            #             timeout=0.5
+            #         )
             
         return CONFIRMATION
     
