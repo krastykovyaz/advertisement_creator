@@ -1,3 +1,6 @@
-python-telegram-bot==13.7
-pillow
-google-genai
+python-telegram-bot==22.1
+pillow==11.2.1
+google-genai==1.18.0
+pytz==2025.2
+tzlocal==5.3.1
+APScheduler==3.11.0
