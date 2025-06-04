@@ -6,7 +6,7 @@ from PIL import Image
 import pytz
 from telegram import InputMediaPhoto, Update, ForceReply, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Application, CommandHandler, MessageHandler, filters, 
+    Application, CommandHandler, MessageHandler, filters,
     ContextTypes, ConversationHandler, CallbackQueryHandler,
     ApplicationBuilder
 )
@@ -27,50 +27,56 @@ MODEL_NAME = "gemini-2.0-flash"
 # Define conversation states
 PHOTO, DESCRIPTION, SUGGESTION, CONFIRMATION = range(4)
 
+
 class PostGeneratorBot:
     def __init__(self):
-        
+
         # Initialize Gemini
         self.gemini = genai.Client(api_key=GEMINI_API_KEY)
-        
+
         # Create temp directory if it doesn't exist
         if not os.path.exists('temp'):
             os.makedirs('temp')
-        
+
         # Set up Telegram bot with new Application builder pattern
         # Explicitly disable the job queue to avoid APScheduler issues
         builder = ApplicationBuilder().token(TELEGRAM_TOKEN)
         self.application = builder.build()
-        
+
         # Add handlers to application
-        self.application.add_handler(CommandHandler('done', self.handle_done_command))
-        
+        self.application.add_handler(
+            CommandHandler('done', self.handle_done_command))
+
         # Update conversation handler to include the command in DESCRIPTION state
         conv_handler = ConversationHandler(
             entry_points=[CommandHandler('start', self.start)],
             states={
                 PHOTO: [
                     MessageHandler(filters.PHOTO, self.receive_photo),
-                    CallbackQueryHandler(self.handle_add_description, pattern='^add_description$')
+                    CallbackQueryHandler(
+                        self.handle_add_description, pattern='^add_description$')
                 ],
                 DESCRIPTION: [
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_description),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND,
+                                   self.handle_description),
                     CommandHandler('done', self.handle_done_command)
                 ],
                 CONFIRMATION: [
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_confirmation),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND,
+                                   self.handle_confirmation),
                     CallbackQueryHandler(self.handle_confirmation)
                 ],
                 SUGGESTION: [
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.receive_correction)
+                    MessageHandler(filters.TEXT & ~filters.COMMAND,
+                                   self.receive_correction)
                 ],
             },
             fallbacks=[CommandHandler('cancel', self.cancel)],
         )
-        
+
         self.application.add_handler(conv_handler)
         self.application.add_error_handler(self.error_handler)
-    
+
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Start the conversation and ask for photos."""
         user = update.effective_user
@@ -79,7 +85,7 @@ class PostGeneratorBot:
                 fr'Hi {user.mention_markdown_v2()}\! Send me one or more photos for your post\.',
                 reply_markup=ForceReply(selective=True),
             )
-        
+
         # Initialize photo list
         context.user_data['photos'] = []
         return PHOTO
@@ -87,7 +93,7 @@ class PostGeneratorBot:
     async def handle_add_description(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         await query.answer()
-        
+
         context.user_data['awaiting_description'] = True
         await query.edit_message_text(
             "✍️ *Please send your description now:*\n"
@@ -103,25 +109,25 @@ class PostGeneratorBot:
             if 'photos' not in context.user_data:
                 context.user_data['photos'] = []
                 context.user_data['processing_msgs'] = []
-            
+
             current_count = len(context.user_data['photos']) + 1
-            
+
             # Send processing notification
             processing_msg = await update.message.reply_text(
                 f"🖼️ Processing photo {current_count}...",
                 reply_to_message_id=update.message.message_id
             )
-            
+
             # Ensure processing_msgs list exists
             if 'processing_msgs' not in context.user_data:
                 context.user_data['processing_msgs'] = []
             context.user_data['processing_msgs'].append(processing_msg)
-            
+
             # Download and process photo
             photo_file = await update.message.photo[-1].get_file()
             photo_path = f"temp/{update.effective_user.id}_{update.message.message_id}.jpg"
             await photo_file.download_to_drive(photo_path)
-            
+
             # Новый способ: отправить изображение в Gemini для генерации подписи
             with open(photo_path, "rb") as img_file:
                 image_bytes = img_file.read()
@@ -141,18 +147,18 @@ class PostGeneratorBot:
                 )
             )
             gemini_caption = response.text if hasattr(response, "text") else ""
-            
+
             # Store results
             context.user_data['photos'].append({
                 'path': photo_path,
                 'caption': gemini_caption
             })
-            
+
             # Update status
             await processing_msg.edit_text(
                 f"✅ Photo {current_count} processed."
             )
-            
+
             # Prompt for more photos
             if current_count == 1:
                 await update.message.reply_text(
@@ -160,7 +166,7 @@ class PostGeneratorBot:
                     reply_markup=ForceReply(selective=True),
                 )
             return PHOTO
-            
+
         except Exception as e:
             logger.error(f"Error processing photo: {e}")
             if 'processing_msg' in locals():
@@ -174,16 +180,17 @@ class PostGeneratorBot:
             photos = context.user_data.get('photos', [])
             if not photos:
                 return "no photos"
-                
+
             # Generate combined description
-            captions = [photo['caption'] for photo in context.user_data['photos']]
+            captions = [photo['caption']
+                        for photo in context.user_data['photos']]
             combined_description = " ".join(captions)
-            
+
             # Clean up
             self.cleanup_temp_files(context)
-            
+
             return combined_description
-        
+
         except Exception as e:
             logger.error(f"Error combining photos: {e}")
             return "the photos"
@@ -198,22 +205,22 @@ class PostGeneratorBot:
                         os.remove(photo['path'])
                 except Exception as e:
                     logger.error(f"Error deleting {photo['path']}: {e}")
-            
+
             # Clear data
             context.user_data.pop('photos', None)
             context.user_data.pop('processing_msgs', None)
-            
+
         except Exception as e:
             logger.error(f"Cleanup error: {e}")
-    
+
     async def receive_correction(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Receive user's corrected version of the post."""
         corrected_text = update.message.text
         context.user_data['corrected_text'] = corrected_text
-        
+
         keyboard = [
             [InlineKeyboardButton("👍 Post It", callback_data="accept"),
-            InlineKeyboardButton("✏️ Edit Again", callback_data="edit")]
+             InlineKeyboardButton("✏️ Edit Again", callback_data="edit")]
         ]
         await update.message.reply_text(
             f"Your edited version:\n\n{corrected_text}\n\nReady to post?",
@@ -221,7 +228,6 @@ class PostGeneratorBot:
         )
         return CONFIRMATION
 
-        
     def generate_suggestion(self, user_data: Dict) -> str:
         """Generate post content using Gemini including the user's description."""
         try:
@@ -246,7 +252,7 @@ class PostGeneratorBot:
 
             Пост должен быть как удар молнии – от изображений к описанию, не оставляя шанса пройти мимо!
             """
-            
+
             response = self.gemini.models.generate_content(
                 model=MODEL_NAME,
                 contents=prompt,
@@ -257,23 +263,24 @@ class PostGeneratorBot:
                 )
             )
             return response.text
-            
+
         except Exception as e:
             logger.error(f"Error generating suggestion: {e}")
             return "Check out my post! #social #post"
-        
+
     async def handle_done_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Handle the /done command to finish photo uploads."""
         if not context.user_data.get('photos'):
             await update.message.reply_text("You haven't sent any photos yet! Please send at least one photo.")
             return PHOTO
-        
+
         # Create inline keyboard with options
         keyboard = [
-            [InlineKeyboardButton("✏️ Add description", callback_data="add_description")]
+            [InlineKeyboardButton("✏️ Add description",
+                                  callback_data="add_description")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        
+
         await update.message.reply_text(
             "Would you like to add a description to your post?",
             reply_markup=reply_markup
@@ -285,12 +292,12 @@ class PostGeneratorBot:
         if update.callback_query:
             query = update.callback_query
             await query.answer()
-            
+
             if query.data == "no_description":
                 context.user_data['description'] = ""
                 await query.edit_message_text("⏳ Generating your post without description...")
                 return await self.generate_final_post(update, context)
-                
+
             elif query.data == "add_description":
                 # Store that we're waiting for description
                 context.user_data['awaiting_description'] = True
@@ -300,14 +307,14 @@ class PostGeneratorBot:
                     parse_mode='Markdown'
                 )
                 return DESCRIPTION
-                
+
             elif query.data == "accept":
                 await query.edit_message_text(
                     f"✅ Post approved!\n\n{context.user_data['suggestion']}\n\n"
                     "Use /start to create another post."
                 )
                 return ConversationHandler.END
-                
+
             elif query.data == "edit":
                 current_text = context.user_data.get('suggestion', '')
                 await query.edit_message_text(
@@ -315,24 +322,34 @@ class PostGeneratorBot:
                     "Please send your corrected version in the chat."
                 )
                 return SUGGESTION
-                
+
             elif query.data == "regenerate":
                 await query.edit_message_text("🔄 Generating new version...")
                 new_suggestion = self.generate_suggestion(context.user_data)
                 context.user_data['suggestion'] = new_suggestion
-                
+
                 keyboard = [
                     [InlineKeyboardButton("👍 Accept", callback_data="accept"),
-                    InlineKeyboardButton("✏️ Edit", callback_data="edit"),
-                    InlineKeyboardButton("🔄 Regenerate", callback_data="regenerate")]
+                     InlineKeyboardButton("✏️ Edit", callback_data="edit"),
+                     InlineKeyboardButton("🔄 Regenerate", callback_data="regenerate")]
                 ]
                 await query.edit_message_text(
-                    f"📝 New Version:\n\n{new_suggestion}\n\n"
-                    "What would you like to do?",
+                    f"📝 New Version generated!",
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+                await query.message.reply_media_group(
+                    media=[
+                        InputMediaPhoto(
+                            media=open(photo['path'], 'rb'),
+                        ) for photo in context.user_data.get('photos', [])
+                    ],
+                    caption=f"📝 New Version:\n\n{new_suggestion}\n\n"
+                )
+                await query.message.reply_text (
+                    "What would you like to do with this post?",
                     reply_markup=InlineKeyboardMarkup(keyboard)
                 )
                 return CONFIRMATION
-                
             else:
                 await query.edit_message_text("⚠️ Unknown action. Please try again.")
                 return CONFIRMATION
@@ -358,12 +375,24 @@ class PostGeneratorBot:
 
             keyboard = [
                 [InlineKeyboardButton("👍 Accept", callback_data="accept"),
-                InlineKeyboardButton("✏️ Edit", callback_data="edit"),
-                InlineKeyboardButton("🔄 Regenerate", callback_data="regenerate")]
+                 InlineKeyboardButton("✏️ Edit", callback_data="edit"),
+                 InlineKeyboardButton("🔄 Regenerate", callback_data="regenerate")]
             ]
+            # await update.message.reply_text(
+            #     f"📝 Post Suggestion:\n\n{suggestion}\n\n"
+            #     "What would you like to do?",
+            #     reply_markup=InlineKeyboardMarkup(keyboard)
+            # )
+            await update.message.reply_media_group(
+                media=[
+                    InputMediaPhoto(
+                        media=open(photo['path'], 'rb'),
+                    ) for photo in context.user_data.get('photos', [])
+                ],
+                caption=f"📝 Post Suggestion:\n\n{suggestion}\n\n",
+            )
             await update.message.reply_text(
-                f"📝 Post Suggestion:\n\n{suggestion}\n\n"
-                "What would you like to do?",
+                "What would you like to do with this post?",
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
             return CONFIRMATION
@@ -388,8 +417,8 @@ class PostGeneratorBot:
             # Show final suggestion with options
             keyboard = [
                 [InlineKeyboardButton("👍 Accept", callback_data="accept"),
-                InlineKeyboardButton("✏️ Edit", callback_data="edit"),
-                InlineKeyboardButton("🔄 Regenerate", callback_data="regenerate")]
+                 InlineKeyboardButton("✏️ Edit", callback_data="edit"),
+                 InlineKeyboardButton("🔄 Regenerate", callback_data="regenerate")]
             ]
             await update.callback_query.message.reply_text(
                 f"📝 Post Suggestion:\n\n{suggestion}\n\n"
@@ -403,10 +432,9 @@ class PostGeneratorBot:
             await update.callback_query.message.reply_text("⚠️ Failed to generate post. Please try again.")
             return ConversationHandler.END
 
-
     async def handle_description(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = update.message.text.strip()
-        
+
         # Сохраняем описание
         context.user_data['description'] = text
         context.user_data['awaiting_description'] = False
@@ -420,42 +448,60 @@ class PostGeneratorBot:
             [
                 InlineKeyboardButton("✅ Publish", callback_data="accept"),
                 InlineKeyboardButton("✏️ Edit", callback_data="edit"),
-                InlineKeyboardButton("🔄 Regenerate", callback_data="regenerate"),
+                InlineKeyboardButton(
+                    "🔄 Regenerate", callback_data="regenerate"),
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         # Edit existing message if possible
-        if update.callback_query:
-            await update.callback_query.edit_message_text(
-                f"📝 *Generated Post:*\n\n{suggestion}\n\n"
-                "What would you like to do?",
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode='Markdown'
-            )
-        else:
-            await update.message.reply_text(
-                f"📝 *Generated Post:*\n\n{suggestion}\n\n"
-                "What would you like to do?",
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode='Markdown'
-            )
-            
+        # if update.callback_query:
+        #     await update.callback_query.edit_message_text(
+        #         f"📝 *Generated Post:*\n\n{suggestion}\n\n"
+        #         "What would you like to do?",
+        #         reply_markup=InlineKeyboardMarkup(keyboard),
+        #         parse_mode='Markdown'
+        #     )
+        # else:
+        #     await update.message.reply_text(
+        #         f"📝 *Generated Post:*\n\n{suggestion}\n\n"
+        #         "What would you like to do?",
+        #         reply_markup=InlineKeyboardMarkup(keyboard),
+        #         parse_mode='Markdown'
+        #     )
+        messages = await update.message.reply_media_group(
+            media=[
+                InputMediaPhoto(
+                    media=open(photo['path'], 'rb')
+                ) for photo in context.user_data.get('photos', [])
+            ],
+            caption=f"📝 Generated Post:\n\n{suggestion}\n\n"
+        )
+
+        # await messages[0].edit_reply_markup (
+        #     reply_markup=InlineKeyboardMarkup(keyboard)
+        # )
+        await update.message.reply_text(
+            "What would you like to do with this post?",
+            reply_markup=reply_markup
+        )
+
         return CONFIRMATION
-    
+
     async def cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Cancel the conversation."""
         await update.message.reply_text('Operation cancelled. Send /start to begin again.')
         return ConversationHandler.END
-    
+
     async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle errors."""
         logger.error(f"Update {update} caused error {context.error}")
         if update and update.message:
             await update.message.reply_text("An error occurred. Please try again.")
-    
+
     def run(self):
         """Run the bot."""
         self.application.run_polling()
+
 
 if __name__ == '__main__':
     bot = PostGeneratorBot()
