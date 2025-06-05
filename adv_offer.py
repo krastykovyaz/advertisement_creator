@@ -23,7 +23,8 @@ GEMINI_API_KEY = 'AIzaSyACHH5mPmNSqyYasIsRnI7QPx-roM_Tk0Q'
 # TELEGRAM_TOKEN = '1640633632:AAF5JR4iBRkn4lVw--cI6-ZIxRxCI87IMx8'
 TELEGRAM_TOKEN = '7624621135:AAEyU65amsdMtNCYFlD0C-BXt_hGpbW_KbE'
 MODEL_NAME = "gemini-2.0-flash"
-ATTRIBUTION_TEXT = "\n\nОбьявление помог сделать @advoffer_bot"
+
+ATTRIBUTION_TEXT = "\n\nСделано с помощью [Рекламный агент](https://t.me/advoffer_bot)"
 
 # Define conversation states
 PHOTO, DESCRIPTION, SUGGESTION, CONFIRMATION = range(4)
@@ -157,15 +158,15 @@ class PostGeneratorBot:
 
             # Update status
             await processing_msg.edit_text(
-                f"✅ Photo {current_count} processed."
+                f"✅ Photo {current_count} processed.\n\nYou can send more photos or type /done to continue."
             )
 
             # Prompt for more photos
-            if current_count == 1:
-                await update.message.reply_text(
-                    "You can send more photos or type /done to continue.",
-                    reply_markup=ForceReply(selective=True),
-                )
+            # if current_count == 1:
+            #     await update.message.reply_text(
+            #         "You can send more photos or type /done to continue.",
+            #         reply_markup=ForceReply(selective=True),
+            #     )
             return PHOTO
 
         except Exception as e:
@@ -234,6 +235,7 @@ class PostGeneratorBot:
                 ) for photo in context.user_data.get('photos', [])
             ],
             caption=f"{corrected_text}{ATTRIBUTION_TEXT}",
+            parse_mode='Markdown'
         )
         await update.message.reply_text(
             "What would you like to do with this post?",
@@ -356,7 +358,7 @@ class PostGeneratorBot:
                             media=open(photo['path'], 'rb'),
                         ) for photo in context.user_data.get('photos', [])
                     ],
-                    caption=f"{new_suggestion}{ATTRIBUTION_TEXT}"
+                    caption=f"{new_suggestion}{ATTRIBUTION_TEXT}",
                 )
                 await query.message.reply_text(
                     "What would you like to do with this post?",
@@ -403,6 +405,7 @@ class PostGeneratorBot:
                     ) for photo in context.user_data.get('photos', [])
                 ],
                 caption=f"{suggestion}{ATTRIBUTION_TEXT}",
+                parse_mode='Markdown'
             )
             await update.message.reply_text(
                 "What would you like to do with this post?",
@@ -436,7 +439,8 @@ class PostGeneratorBot:
             await update.callback_query.message.reply_text(
                 f"{suggestion}{ATTRIBUTION_TEXT}\n\n"
                 "What would you like to do?",
-                reply_markup=InlineKeyboardMarkup(keyboard)
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
             )
             return CONFIRMATION
 
@@ -487,7 +491,8 @@ class PostGeneratorBot:
                     media=open(photo['path'], 'rb')
                 ) for photo in context.user_data.get('photos', [])
             ],
-            caption=f"📝 Generated Post:\n\n{suggestion}{ATTRIBUTION_TEXT}"
+            caption=f"{suggestion}{ATTRIBUTION_TEXT}",
+            parse_mode='Markdown'
         )
 
         # await messages[0].edit_reply_markup (
