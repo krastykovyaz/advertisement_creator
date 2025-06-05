@@ -222,8 +222,20 @@ class PostGeneratorBot:
             [InlineKeyboardButton("👍 Post It", callback_data="accept"),
              InlineKeyboardButton("✏️ Edit Again", callback_data="edit")]
         ]
+        # await update.message.reply_text(
+        #     f"Your edited version:\n\n{corrected_text}\n\nReady to post?",
+        #     reply_markup=InlineKeyboardMarkup(keyboard)
+        # )
+        await update.message.reply_media_group(
+            media=[
+                InputMediaPhoto(
+                    media=open(photo['path'], 'rb'),
+                ) for photo in context.user_data.get('photos', [])
+            ],
+            caption=f"{corrected_text}\n\n",
+        )
         await update.message.reply_text(
-            f"Your edited version:\n\n{corrected_text}\n\nReady to post?",
+            "What would you like to do with this post?",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return CONFIRMATION
@@ -310,7 +322,7 @@ class PostGeneratorBot:
 
             elif query.data == "accept":
                 await query.edit_message_text(
-                    f"✅ Post approved!\n\n{context.user_data['suggestion']}\n\n"
+                    f"✅ Post approved!\n\n"
                     "Use /start to create another post."
                 )
                 return ConversationHandler.END
@@ -345,7 +357,7 @@ class PostGeneratorBot:
                     ],
                     caption=f"📝 New Version:\n\n{new_suggestion}\n\n"
                 )
-                await query.message.reply_text (
+                await query.message.reply_text(
                     "What would you like to do with this post?",
                     reply_markup=InlineKeyboardMarkup(keyboard)
                 )
@@ -389,7 +401,7 @@ class PostGeneratorBot:
                         media=open(photo['path'], 'rb'),
                     ) for photo in context.user_data.get('photos', [])
                 ],
-                caption=f"📝 Post Suggestion:\n\n{suggestion}\n\n",
+                caption=f"{suggestion}\n\n",
             )
             await update.message.reply_text(
                 "What would you like to do with this post?",
@@ -421,7 +433,7 @@ class PostGeneratorBot:
                  InlineKeyboardButton("🔄 Regenerate", callback_data="regenerate")]
             ]
             await update.callback_query.message.reply_text(
-                f"📝 Post Suggestion:\n\n{suggestion}\n\n"
+                f"{suggestion}\n\n"
                 "What would you like to do?",
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
