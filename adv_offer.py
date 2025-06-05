@@ -23,6 +23,7 @@ GEMINI_API_KEY = 'AIzaSyACHH5mPmNSqyYasIsRnI7QPx-roM_Tk0Q'
 # TELEGRAM_TOKEN = '1640633632:AAF5JR4iBRkn4lVw--cI6-ZIxRxCI87IMx8'
 TELEGRAM_TOKEN = '7624621135:AAEyU65amsdMtNCYFlD0C-BXt_hGpbW_KbE'
 MODEL_NAME = "gemini-2.0-flash"
+ATTRIBUTION_TEXT = "\n\nОбьявление помог сделать @advoffer_bot"
 
 # Define conversation states
 PHOTO, DESCRIPTION, SUGGESTION, CONFIRMATION = range(4)
@@ -232,7 +233,7 @@ class PostGeneratorBot:
                     media=open(photo['path'], 'rb'),
                 ) for photo in context.user_data.get('photos', [])
             ],
-            caption=f"{corrected_text}\n\n",
+            caption=f"{corrected_text}{ATTRIBUTION_TEXT}",
         )
         await update.message.reply_text(
             "What would you like to do with this post?",
@@ -355,7 +356,7 @@ class PostGeneratorBot:
                             media=open(photo['path'], 'rb'),
                         ) for photo in context.user_data.get('photos', [])
                     ],
-                    caption=f"📝 New Version:\n\n{new_suggestion}\n\n"
+                    caption=f"{new_suggestion}{ATTRIBUTION_TEXT}"
                 )
                 await query.message.reply_text(
                     "What would you like to do with this post?",
@@ -401,7 +402,7 @@ class PostGeneratorBot:
                         media=open(photo['path'], 'rb'),
                     ) for photo in context.user_data.get('photos', [])
                 ],
-                caption=f"{suggestion}\n\n",
+                caption=f"{suggestion}{ATTRIBUTION_TEXT}",
             )
             await update.message.reply_text(
                 "What would you like to do with this post?",
@@ -433,7 +434,7 @@ class PostGeneratorBot:
                  InlineKeyboardButton("🔄 Regenerate", callback_data="regenerate")]
             ]
             await update.callback_query.message.reply_text(
-                f"{suggestion}\n\n"
+                f"{suggestion}{ATTRIBUTION_TEXT}\n\n"
                 "What would you like to do?",
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
@@ -486,7 +487,7 @@ class PostGeneratorBot:
                     media=open(photo['path'], 'rb')
                 ) for photo in context.user_data.get('photos', [])
             ],
-            caption=f"📝 Generated Post:\n\n{suggestion}\n\n"
+            caption=f"📝 Generated Post:\n\n{suggestion}{ATTRIBUTION_TEXT}"
         )
 
         # await messages[0].edit_reply_markup (
